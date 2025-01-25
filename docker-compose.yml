@@ -1,0 +1,65 @@
+version: "3.8"
+services:
+    traefik:
+        image: traefik:v3.3.2
+        command:
+            - "--api.insecure=true" # Enable Traefik's dashboard (disable for production)
+            - "--providers.docker=true" # Enable Docker provider
+            - "--entrypoints.web.address=:80" # Define entrypoint for HTTP traffic
+            - "--ping=true" # Enable Traefik's ping endpoint
+        ports:
+            - "80:80" # Expose HTTP port
+            - "8080:8080" # Expose Traefik dashboard
+        volumes:
+            - "/var/run/docker.sock:/var/run/docker.sock:ro" # Allow Traefik to interact with Docker
+        labels:
+            - "traefik.enable=true"
+        networks:
+            - web
+
+    web:
+        image: "serversideup/php:8.4-fpm-nginx"
+        environment:
+            SSL_MOD: "mixed"
+            PHP_OPCACHE_ENABLE: 1
+        volumes:
+            - .:/var/www/html
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.web.entrypoints=web"
+            - "traefik.http.routers.web.rule=Host(`laravel.localhost`)" # Define routing rule
+            - "traefik.http.services.web.loadbalancer.server.port=8080" # Define the port for the load balancer
+            - "traefik.http.services.web.loadbalancer.healthcheck.path=/up" # Health check path
+            - "traefik.http.services.web.loadbalancer.healthcheck.interval=10s" # Health check interval
+        networks:
+            - web
+
+    task:
+        image: serversideup/php:8.4-fpm-nginx-alpine
+        command: ["php", "/var/www/html/artisan", "schedule:work"]
+        stop_signal: SIGTERM # Set this for graceful shutdown if you're using fpm-apache or fpm-nginx
+        volumes:
+            - .:/var/www/html:rw
+        healthcheck:
+            # This is our native healthcheck script for the scheduler
+            test: ["CMD", "healthcheck-schedule"]
+            start_period: 10s
+        networks:
+            - web
+
+    database:
+        image: "postgres:16"
+        environment:
+            POSTGRES_USER: "postgres"
+            POSTGRES_PASSWORD: "root"
+            POSTGRES_DB: "laravel"
+        ports:
+            - "5432:5432"
+        volumes:
+            - ./docker/db/data:/var/lib/postgresql/data
+        networks:
+            - web
+
+networks:
+    web:
+        external: false
