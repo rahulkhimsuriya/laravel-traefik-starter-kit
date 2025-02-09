@@ -18,9 +18,9 @@ services:
             - web
 
     web:
-        image: "serversideup/php:8.4-fpm-nginx"
+        image: "serversideup/php:8.4-fpm-nginx-alpine"
         environment:
-            SSL_MOD: "mixed"
+            SSL_MODE: "mixed"
             PHP_OPCACHE_ENABLE: 1
         volumes:
             - .:/var/www/html
@@ -47,6 +47,36 @@ services:
         networks:
             - web
 
+    queue:
+        image: serversideup/php:8.4-fpm-nginx-alpine
+        command:
+            [
+                "php",
+                "/var/www/html/artisan",
+                "queue:work",
+                "--queue=hight,default",
+            ]
+        stop_signal: SIGTERM # Set this for graceful shutdown if you're using fpm-apache or fpm-nginx
+        volumes:
+            - .:/var/www/html:rw
+        healthcheck:
+            # This is our native healthcheck script for the scheduler
+            test: ["CMD", "healthcheck-schedule"]
+            start_period: 10s
+        networks:
+            - web
+
+    adminer:
+        image: adminer:4.8.1-standalone
+        restart: always
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.adminer.entrypoints=web"
+            - "traefik.http.routers.adminer.rule=Host(`adminer.localhost`)" # Define routing rule
+            - "traefik.http.services.adminer.loadbalancer.server.port=8080" # Define the port for the load balancer
+        networks:
+            - web
+
     database:
         image: "postgres:16"
         environment:
@@ -54,9 +84,29 @@ services:
             POSTGRES_PASSWORD: "root"
             POSTGRES_DB: "laravel"
         ports:
-            - "5432:5432"
+            - "5432:5432" # Expose the port for other database clients
         volumes:
             - ./docker/db/data:/var/lib/postgresql/data
+        networks:
+            - web
+
+    mail:
+        image: "axllent/mailpit:v1.21"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.mail.entrypoints=web"
+            - "traefik.http.routers.mail.rule=Host(`mail.localhost`)" # Define routing rule
+            - "traefik.http.services.mail.loadbalancer.server.port=8025" # Define the port for the load balancer
+        networks:
+            - web
+
+    redis:
+        image: "redis/redis-stack:7.2.0-v14"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.redis.entrypoints=web"
+            - "traefik.http.routers.redis.rule=Host(`redis.localhost`)" # Define routing rule
+            - "traefik.http.services.redis.loadbalancer.server.port=8001" # Define the port for the load balancer
         networks:
             - web
 
