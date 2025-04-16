@@ -54,7 +54,6 @@ services:
                 "php",
                 "/var/www/html/artisan",
                 "queue:work",
-                "--queue=hight,default",
             ]
         stop_signal: SIGTERM # Set this for graceful shutdown if you're using fpm-apache or fpm-nginx
         volumes:
